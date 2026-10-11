@@ -45,3 +45,8 @@ Thumbs.db
 
 # --- Logs ---
 *.log
+
+# --- 个人笔记与临时文件 ---
+files/
+*.docx
+jdk/
