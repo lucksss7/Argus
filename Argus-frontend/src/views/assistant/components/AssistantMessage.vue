@@ -64,6 +64,19 @@ function formatTime(iso: string): string {
 function pad(n: number): string {
   return String(n).padStart(2, '0')
 }
+
+function modeLabel(mode: AssistantToolMode | null): string {
+  switch (mode) {
+    case 'CHAT':
+      return 'chat'
+    case 'KB_SEARCH':
+      return 'kb_search'
+    case 'TICKET_QUERY':
+      return 'ticket_query'
+    default:
+      return ''
+  }
+}
 </script>
 
 <template>
@@ -95,7 +108,7 @@ function pad(n: number): string {
           {{ message.role === 'USER' ? 'You' : message.role === 'ASSISTANT' ? 'Argus' : 'Tool' }}
         </span>
         <span v-if="message.toolMode" class="amsg__mode-tag" :class="`amsg__mode-tag--${message.toolMode.toLowerCase()}`">
-          {{ message.toolMode === 'CHAT' ? 'chat' : 'kb_search' }}
+          {{ modeLabel(message.toolMode) }}
         </span>
         <span class="amsg__time">{{ formatTime(message.createdAt) }}</span>
       </header>
@@ -264,6 +277,11 @@ function pad(n: number): string {
 .amsg__mode-tag--kb_search {
   color: var(--brand-accent-dark);
   background: rgba(92, 201, 193, 0.12);
+}
+
+.amsg__mode-tag--ticket_query {
+  color: #d97706;
+  background: rgba(245, 158, 11, 0.12);
 }
 
 .amsg__time {

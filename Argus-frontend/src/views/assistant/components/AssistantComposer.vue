@@ -28,15 +28,16 @@ const groupValue = computed({
 })
 
 const isKb = computed(() => props.mode === 'KB_SEARCH')
+const isTicket = computed(() => props.mode === 'TICKET_QUERY')
 const kbBlocked = computed(() => isKb.value && props.selectedGroupId === null)
 
 const placeholder = computed(() => {
   if (props.disabled) return '请先在左侧选择或新建一个会话'
   if (kbBlocked.value) return '请先选择要检索的知识库群组'
   if (props.streaming) return '正在接收回答…（按 Esc 中断）'
-  return props.mode === 'CHAT'
-    ? '和 Argus 聊点什么？按 Enter 发送 / Shift + Enter 换行'
-    : '在知识库中提问，答案会附带证据引用'
+  if (props.mode === 'KB_SEARCH') return '在知识库中提问，答案会附带证据引用'
+  if (props.mode === 'TICKET_QUERY') return '用自然语言查询工单，例如「我有哪些待审批的工单？」'
+  return '和 Argus 聊点什么？按 Enter 发送 / Shift + Enter 换行'
 })
 
 function autoResize() {
@@ -86,7 +87,7 @@ defineExpose({ focus, setText })
 <template>
   <div class="acx">
     <div class="acx__wrap">
-      <div class="acx__shell" :class="{ 'is-disabled': disabled, 'is-kb': isKb, 'is-streaming': streaming }">
+      <div class="acx__shell" :class="{ 'is-disabled': disabled, 'is-kb': isKb, 'is-ticket': isTicket, 'is-streaming': streaming }">
         <!-- Meta bar -->
         <div class="acx__meta">
           <ModeSwitcher :mode="mode" @update:mode="(m) => emit('update:mode', m)" />
@@ -208,6 +209,17 @@ defineExpose({ focus, setText })
   box-shadow:
     0 0 0 4px rgba(92, 201, 193, 0.1),
     0 8px 20px rgba(92, 201, 193, 0.1);
+}
+
+.acx__shell.is-ticket {
+  border-color: rgba(245, 158, 11, 0.35);
+}
+
+.acx__shell.is-ticket:focus-within {
+  border-color: #d97706;
+  box-shadow:
+    0 0 0 4px rgba(245, 158, 11, 0.1),
+    0 8px 20px rgba(245, 158, 11, 0.1);
 }
 
 .acx__shell.is-streaming {
@@ -405,6 +417,11 @@ defineExpose({ focus, setText })
   box-shadow: 0 4px 12px rgba(92, 201, 193, 0.3);
 }
 
+.acx__shell.is-ticket .acx__btn--send {
+  background: linear-gradient(135deg, #f59e0b, #d97706);
+  box-shadow: 0 4px 12px rgba(245, 158, 11, 0.3);
+}
+
 .acx__btn--send:hover:not(:disabled) {
   transform: translateY(-1px);
   box-shadow: 0 8px 18px rgba(74, 144, 217, 0.35);
@@ -412,6 +429,10 @@ defineExpose({ focus, setText })
 
 .acx__shell.is-kb .acx__btn--send:hover:not(:disabled) {
   box-shadow: 0 8px 18px rgba(92, 201, 193, 0.4);
+}
+
+.acx__shell.is-ticket .acx__btn--send:hover:not(:disabled) {
+  box-shadow: 0 8px 18px rgba(245, 158, 11, 0.4);
 }
 
 .acx__btn--send:disabled {

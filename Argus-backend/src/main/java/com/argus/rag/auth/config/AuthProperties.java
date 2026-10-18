@@ -2,6 +2,7 @@ package com.argus.rag.auth.config;
 
 import jakarta.validation.constraints.Min;
 import jakarta.validation.constraints.NotBlank;
+import jakarta.validation.constraints.Size;
 import lombok.Data;
 import org.springframework.boot.context.properties.ConfigurationProperties;
 import org.springframework.validation.annotation.Validated;
@@ -26,8 +27,9 @@ public class AuthProperties {
     @Min(1)
     private int refreshTokenExpireDays = 14;
 
-    /** JWT HMAC 签名密钥，至少 32 字节 */
+    /** JWT HMAC 签名密钥；@NotBlank 拒绝空/空白，@Size(min=32) 按字符数拒绝过短，UTF-8 字节下限仍由 JwtAccessTokenService 兜底 */
     @NotBlank
+    @Size(min = 32)
     private String jwtSecret;
 
     /** Refresh token Cookie 名称 */

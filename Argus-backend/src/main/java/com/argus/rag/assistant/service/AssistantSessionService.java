@@ -21,6 +21,8 @@ import java.util.List;
  * <p>提供会话的 CRUD 操作，包括创建会话、查询会话列表、查看详情、重命名、删除会话，
  * 以及根据首条消息自动生成会话标题等功能。</p>
  * <p>所有操作均校验当前用户对目标会话的归属权。</p>
+ * <p>会话是模式无关的用户容器，因此放行系统管理员与普通业务用户；管理员能否使用
+ * 具体模式（CHAT/KB_SEARCH 禁止、TICKET_QUERY/TICKET_ASSIST 放行）由聊天入口按模式判定。</p>
  */
 @Service
 public class AssistantSessionService {
@@ -52,7 +54,7 @@ public class AssistantSessionService {
      */
     @Transactional
     public AssistantSessionDetailVO createSession() {
-        CurrentUserService.CurrentUser currentUser = currentUserService.requireBusinessUser();
+        CurrentUserService.CurrentUser currentUser = currentUserService.getRequiredCurrentUser();
         AssistantSessionEntity entity = buildNewSession(currentUser.userId());
         int affectedRows = assistantSessionMapper.insert(entity);
         if (affectedRows != 1 || entity.getId() == null) {
@@ -68,7 +70,7 @@ public class AssistantSessionService {
      * @return 会话列表项视图对象列表，按 {@code lastMessageAt} 降序
      */
     public List<AssistantSessionListItemVO> listSessions() {
-        CurrentUserService.CurrentUser currentUser = currentUserService.requireBusinessUser();
+        CurrentUserService.CurrentUser currentUser = currentUserService.getRequiredCurrentUser();
         return assistantSessionMapper.selectByUserIdOrderByLastMessageAtDesc(currentUser.userId()).stream()
                 .map(this::toListItemVO)
                 .toList();
@@ -83,7 +85,7 @@ public class AssistantSessionService {
      * @throws BusinessException 如果会话不存在或 {@code sessionId} 非法
      */
     public AssistantSessionDetailVO getSessionDetail(Long sessionId) {
-        CurrentUserService.CurrentUser currentUser = currentUserService.requireBusinessUser();
+        CurrentUserService.CurrentUser currentUser = currentUserService.getRequiredCurrentUser();
         return toDetailVO(requireOwnedSession(requireSessionId(sessionId), currentUser.userId()));
     }
 
@@ -102,7 +104,7 @@ public class AssistantSessionService {
             Long sessionId,
             UpdateAssistantSessionRequest requestBody
     ) {
-        CurrentUserService.CurrentUser currentUser = currentUserService.requireBusinessUser();
+        CurrentUserService.CurrentUser currentUser = currentUserService.getRequiredCurrentUser();
         AssistantSessionEntity session = requireOwnedSession(requireSessionId(sessionId), currentUser.userId());
         String nextTitle = normalizeTitle(requestBody);
         LocalDateTime now = LocalDateTime.now();
@@ -124,7 +126,7 @@ public class AssistantSessionService {
      */
     @Transactional
     public void deleteSession(Long sessionId) {
-        CurrentUserService.CurrentUser currentUser = currentUserService.requireBusinessUser();
+        CurrentUserService.CurrentUser currentUser = currentUserService.getRequiredCurrentUser();
         AssistantSessionEntity session = requireOwnedSession(requireSessionId(sessionId), currentUser.userId());
         assistantSessionContextMapper.deleteBySessionId(session.getId());
         assistantMessageMapper.deleteBySessionId(session.getId());

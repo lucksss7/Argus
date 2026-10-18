@@ -38,9 +38,13 @@ services:
       retries: 20
 
   minio:
-    image: minio/minio:RELEASE.2025-09-07T16-13-09Z
+    # MinIO 官方已于 2025-10 停止发布 Docker 镜像（Docker Hub / quay.io 均已下架），
+    # 改用社区维护的正版替代 cgr.dev/chainguard/minio。
+    image: cgr.dev/chainguard/minio:latest
     container_name: argus-rag-minio
     restart: unless-stopped
+    # Chainguard 镜像默认以非 root 用户(65532)运行，写 /data 会权限不足，这里用 root 运行
+    user: "0"
     command: server /data --console-address ":9001"
     environment:
       MINIO_ROOT_USER: ${MINIO_ROOT_USER:-minioadmin}
@@ -50,8 +54,9 @@ services:
       - "${MINIO_CONSOLE_PORT:-9001}:9001"
     volumes:
       - minio-data:/data
+    # Chainguard 镜像不含 curl，改用 bash 的 /dev/tcp 检测 9000 端口是否在监听
     healthcheck:
-      test: ["CMD", "curl", "-f", "http://localhost:9000/minio/health/live"]
+      test: ["CMD", "bash", "-c", "exec 3<>/dev/tcp/127.0.0.1/9000"]
       interval: 10s
       timeout: 5s
       retries: 10

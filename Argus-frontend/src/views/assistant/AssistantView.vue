@@ -44,7 +44,8 @@ const activeSession = computed(() =>
 )
 
 // ── Mode + KB ──
-const mode = ref<AssistantToolMode>('CHAT')
+// 管理员仅开放工单查询模式（后端会拒绝管理员的 CHAT / KB_SEARCH）；普通用户默认对话模式。
+const mode = ref<AssistantToolMode>(authStore.isAdmin ? 'TICKET_QUERY' : 'CHAT')
 const selectedGroupId = ref<number | null>(appStore.currentGroupId)
 
 const selectedGroupName = computed(() => {
@@ -87,6 +88,8 @@ async function loadSessions(silent = false) {
 }
 
 async function loadGroupsIfNeeded() {
+  // 管理员仅开放工单查询/工单助手模式，不涉及知识库群组；后端也会拒绝管理员的群组接口。
+  if (authStore.isAdmin) return
   if (appStore.visibleGroups.length > 0) return
   try {
     const result = await fetchGroups()

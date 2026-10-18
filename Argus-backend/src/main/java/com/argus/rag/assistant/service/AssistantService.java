@@ -78,20 +78,16 @@ public class AssistantService {
     @Transactional
     public AssistantChatResponse chat(HttpServletRequest request, AssistantChatRequest chatRequest) {
         long startTime = System.currentTimeMillis();
-        CurrentUserService.CurrentUser currentUser = currentUserService.requireBusinessUser();
         AssistantChatRequest safeRequest = requireChatRequest(chatRequest);
+        CurrentUserService.CurrentUser currentUser = resolveCurrentUser(safeRequest.toolMode());
 
         String reply = null;
         boolean success = false;
         String errorMessage = null;
         try {
             // 仅对话模式先落用户消息，再调模型，这样后续 hook 可以基于最新会话状态重建上下文。
-            saveUserMessage(currentUser.userId(), safeRequest);
-            AssistantExecutionResult executionResult = executeAssistant(
-                    request,
-                    currentUser.userId(),
-                    safeRequest
-            );
+            AssistantMessageVO userMessage = saveUserMessage(currentUser.userId(), safeRequest);
+            AssistantExecutionResult executionResult = executeAssistant(currentUser, safeRequest, userMessage.messageId());
             reply = executionResult.reply();
             AssistantMessageVO assistantMessage = saveAssistantMessage(
                     currentUser.userId(),
@@ -139,15 +135,19 @@ public class AssistantService {
             AssistantChatRequest chatRequest,
             AssistantStreamEventEmitter eventEmitter
     ) {
-        streamChat( chatRequest, eventEmitter, deltaEmitter ->
-                assistantAgentFacade.streamChat(
-                        currentUserService.requireBusinessUser().userId(),
+        streamChat( chatRequest, eventEmitter, (deltaEmitter, messageId) -> {
+                CurrentUserService.CurrentUser currentUser = resolveCurrentUser(chatRequest.toolMode());
+                return assistantAgentFacade.streamChat(
+                        currentUser.userId(),
+                        currentUser.systemRole(),
                         chatRequest.sessionId(),
                         chatRequest.toolMode(),
                         chatRequest.groupId(),
+                        messageId,
                         chatRequest.message(),
                         deltaEmitter
-                ));
+                );
+        });
     }
 
     /**
@@ -166,8 +166,8 @@ public class AssistantService {
             ChatStreamExecutor streamExecutor
     ) {
         long startTime = System.currentTimeMillis();
-        CurrentUserService.CurrentUser currentUser = currentUserService.requireBusinessUser();
         AssistantChatRequest safeRequest = requireChatRequest(chatRequest);
+        CurrentUserService.CurrentUser currentUser = resolveCurrentUser(safeRequest.toolMode());
         // 流式场景和同步场景共享同一条主链，只是把模型回复拆成 delta 逐步回传给前端。
         // 用户消息是先落库，再调模型。
 
@@ -175,7 +175,7 @@ public class AssistantService {
         boolean success = false;
         String errorMessage = null;
         try {
-            saveUserMessage(currentUser.userId(), safeRequest);
+            AssistantMessageVO userMessage = saveUserMessage(currentUser.userId(), safeRequest);
 
             // 告诉前端：流式回答开始了
             eventEmitter.emit(AssistantChatStreamEvent.start(
@@ -185,7 +185,6 @@ public class AssistantService {
             ));
 
             AssistantExecutionResult executionResult = executeAssistantStreaming(
-                    currentUser.userId(),
                     safeRequest,
                     // 每当模型吐出一小段文本 delta, 包装为AssistantChatStreamEvent.delta()，再通过 eventEmitter.emit(...) 发给前端
                     delta -> eventEmitter.emit(AssistantChatStreamEvent.delta(
@@ -194,7 +193,8 @@ public class AssistantService {
                             safeRequest.groupId(),
                             delta
                     )),
-                    streamExecutor
+                    streamExecutor,
+                    userMessage.messageId()
             );
             reply = executionResult.reply();
             // 保存助手回复
@@ -245,8 +245,11 @@ public class AssistantService {
         if (chatRequest == null) {
             throw new BusinessException("聊天请求不能为空");
         }
-        if (chatRequest.toolMode() == AssistantToolMode.CHAT && chatRequest.groupId() != null) {
-            throw new BusinessException("CHAT 模式不允许传 groupId");
+        if ((chatRequest.toolMode() == AssistantToolMode.CHAT
+                || chatRequest.toolMode() == AssistantToolMode.TICKET_QUERY
+                || chatRequest.toolMode() == AssistantToolMode.TICKET_ASSIST)
+                && chatRequest.groupId() != null) {
+            throw new BusinessException("当前模式不允许传 groupId");
         }
         if (chatRequest.toolMode() == AssistantToolMode.KB_SEARCH && chatRequest.groupId() == null) {
             throw new BusinessException("KB_SEARCH 模式必须传 groupId");
@@ -255,27 +258,44 @@ public class AssistantService {
     }
 
     /**
+     * 按工具模式解析当前登录用户。
+     * <p>{@code CHAT}/{@code KB_SEARCH} 维持原有规则，仅允许普通业务用户（管理员被拒）；
+     * {@code TICKET_QUERY}/{@code TICKET_ASSIST} 需要允许系统管理员查询/创建工单，因此改用
+     * {@link CurrentUserService#getRequiredCurrentUser()} 同时放行管理员与普通用户，
+     * 实际可见范围与建单身份由 {@link com.argus.rag.ticket.service.TicketService} 依据角色判定。</p>
+     */
+    private CurrentUserService.CurrentUser resolveCurrentUser(AssistantToolMode toolMode) {
+        if (toolMode == AssistantToolMode.TICKET_QUERY || toolMode == AssistantToolMode.TICKET_ASSIST) {
+            return currentUserService.getRequiredCurrentUser();
+        }
+        return currentUserService.requireBusinessUser();
+    }
+
+    /**
      * 执行同步 Agent 调用。
      * <p>根据工具模式判断是否需要校验知识库可读权限，然后调用 {@link AssistantAgentFacade#chat}
      * 获取 Agent 回复结果，封装为 {@link AssistantExecutionResult}。</p>
      *
-     * @param request    HTTP 请求对象，用于权限校验
-     * @param userId     当前用户ID
+     * @param currentUser 当前登录用户（含用户 ID 与角色）
      * @param safeRequest 已校验的聊天请求体
+     * @param messageId   当前用户消息 ID，作为建单的消息级幂等边界
      * @return Agent 执行结果，包含回复文本、结构化数据和引用来源
      */
     private AssistantExecutionResult executeAssistant(
-            HttpServletRequest request,
-            Long userId,
-            AssistantChatRequest safeRequest
+            CurrentUserService.CurrentUser currentUser,
+            AssistantChatRequest safeRequest,
+            Long messageId
     ) {
         requireKnowledgeBaseReadableIfNeeded( safeRequest);
-        // CHAT 和 KB_SEARCH 都统一走 Agent。KB_SEARCH 模式下，Agent 会通过知识库 Tool 获取证据。
+        // CHAT / KB_SEARCH / TICKET_QUERY 都统一走 Agent。
+        // KB_SEARCH 通过知识库 Tool 获取证据，TICKET_QUERY 通过工单查询 Tool 获取可见工单。
         AssistantAgentResult agentResult = assistantAgentFacade.chat(
-                userId,
+                currentUser.userId(),
+                currentUser.systemRole(),
                 safeRequest.sessionId(),
                 safeRequest.toolMode(),
                 safeRequest.groupId(),
+                messageId,
                 safeRequest.message()
         );
         return new AssistantExecutionResult(agentResult.reply(), null, agentResult.citations());
@@ -286,37 +306,39 @@ public class AssistantService {
      * <p>根据工具模式判断是否需要校验知识库可读权限，然后通过 {@link ChatStreamExecutor}
      * 执行 Agent 流式调用，模型输出的每一段 delta 回调给 {@code deltaConsumer}。</p>
      *
-     * @param userId        当前用户ID
      * @param safeRequest   已校验的聊天请求体
      * @param deltaConsumer delta 文本片段消费回调
      * @param streamExecutor 流式执行器，封装 Agent 流式调用逻辑
+     * @param messageId     当前用户消息 ID，作为建单的消息级幂等边界
      * @return Agent 执行结果，包含完整回复文本、结构化数据和引用来源
      */
     private AssistantExecutionResult executeAssistantStreaming(
-            Long userId,
             AssistantChatRequest safeRequest,
             Consumer<String> deltaConsumer,
-            ChatStreamExecutor streamExecutor
+            ChatStreamExecutor streamExecutor,
+            Long messageId
     ) {
         if (safeRequest.toolMode() == AssistantToolMode.CHAT) {
             // 仅对话流式模式下，delta 直接来自 AgentFacade.streamChat 的模型流输出。
-            AssistantAgentResult agentResult = streamExecutor.execute(deltaConsumer);
+            AssistantAgentResult agentResult = streamExecutor.execute(deltaConsumer, messageId);
             return new AssistantExecutionResult(agentResult.reply(), null, agentResult.citations());
         }
         requireKnowledgeBaseReadableIfNeeded(safeRequest);
-        AssistantAgentResult agentResult = streamExecutor.execute(deltaConsumer);
+        AssistantAgentResult agentResult = streamExecutor.execute(deltaConsumer, messageId);
         return new AssistantExecutionResult(agentResult.reply(), null, agentResult.citations());
     }
 
     /**
      * 保存用户消息到数据库。
-     * <p>将聊天请求中的消息内容持久化为 {@code USER} 角色的消息记录。</p>
+     * <p>将聊天请求中的消息内容持久化为 {@code USER} 角色的消息记录，并返回保存后的消息视图
+     * （含服务端生成的消息 ID，供 TICKET_ASSIST 建单工具作为消息级幂等边界）。</p>
      *
      * @param userId      当前用户ID
      * @param safeRequest 已校验的聊天请求体
+     * @return 保存后的用户消息视图对象
      */
-    private void saveUserMessage(Long userId, AssistantChatRequest safeRequest) {
-        assistantConversationService.saveUserMessage(
+    private AssistantMessageVO saveUserMessage(Long userId, AssistantChatRequest safeRequest) {
+        return assistantConversationService.saveUserMessage(
                 userId,
                 new AssistantMessageCreateDTO(
                         safeRequest.sessionId(),
@@ -455,8 +477,9 @@ public class AssistantService {
          * 执行流式 Agent 调用。
          *
          * @param deltaConsumer 用于接收模型输出的每一段 delta 文本的消费回调
+         * @param messageId     当前用户消息 ID，作为建单的消息级幂等边界
          * @return Agent 调用结果，包含完整回复文本和引用来源
          */
-        AssistantAgentResult execute(Consumer<String> deltaConsumer);
+        AssistantAgentResult execute(Consumer<String> deltaConsumer, Long messageId);
     }
 }

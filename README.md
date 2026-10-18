@@ -32,6 +32,10 @@
 </p>
 
 <p align="center">
+  <strong>🎫 二次开发：智能工单处理与受控执行平台</strong> —— Agent 用自然语言创建/查询工单，工单沿 9 状态状态机流转并经审批受控执行，配套 100 条自动化评测与基线对比。
+</p>
+
+<p align="center">
   <a href="#-核心亮点">核心亮点</a> ·
   <a href="#-系统架构">系统架构</a> ·
   <a href="#-功能模块">功能模块</a> ·
@@ -199,6 +203,16 @@ graph TB
   - L3 运行时截断（Token 超 50000 时的最后防线）
 - **SSE 流式输出**：Delta 去重 + AGENT_MODEL_FINISHED 兜底
 
+### 🎫 工单处理与受控执行
+
+- **9 状态状态机**：待处理 → 待审批 → 已通过 → 执行中 → 已解决，含拒绝/取消/关闭/终止分支，非法流转被后端强校验拦截
+- **审批与执行分离**：审批通过/拒绝、执行、人工处置仅系统管理员；创建人只能建单、提交、取消；身份一律取自登录态
+- **Agent 工单工具**：createTicket / queryTickets / getTicketDetail / getTicketExecutions，自然语言建单 + 只读查询，无法绕过审批
+- **可靠性机制**：建单幂等键 + 执行幂等键、乐观锁、执行记录 append-only、UNCERTAIN 结果需人工核验后才可重试
+- **自动化评测**：100 条固定测试集（8 类场景）、固定 temperature=0 可复现，qwen-plus 工具选择 96% / 字段抽取 100% / 端到端建单 100% / 追问 100%，qwen-turbo 基线 29%
+
+> 详细架构与数据模型见 [`docs/工单模块-设计与架构.md`](docs/工单模块-设计与架构.md)，演示步骤见 [`docs/演示脚本.md`](docs/演示脚本.md)。
+
 <br/>
 
 ## 🛠️ 技术栈
@@ -306,26 +320,15 @@ docker restart elasticsearch
 
 ### 2️⃣ 配置环境
 
-编辑 `Argus-backend/src/main/resources/application-local.yml`，填写数据库、中间件和 LLM 配置：
+后端配置集中在 `Argus-backend/src/main/resources/application-dev.yml`，采用 `${环境变量:默认值}` 语法。数据库 / MinIO / Elasticsearch 在本地开发已有默认值，需要显式提供的只有两项：
 
-```yaml
-# 数据库
-spring.datasource.url: jdbc:postgresql://localhost:5432/argus_rag
-spring.datasource.username: your_username
-spring.datasource.password: your_password
+- **`ARGUS_RAG_JWT_SECRET`（必填，无默认值）**：JWT 签名密钥，至少 32 字节，未设置则后端启动失败。
+- **`DASHSCOPE_API_KEY` / `OPENAI_API_KEY`**：LLM 与 Embedding 所需（二者共用同一个百炼 Key）。
 
-# LLM
-spring.ai.dashscope.api-key: ${DASHSCOPE_API_KEY}
-spring.ai.openai.api-key: ${DASHSCOPE_API_KEY}  # 与 DashScope 共用 Key
-
-# 对象存储（可选）
-storage.minio.endpoint: http://localhost:9000
-storage.minio.access-key: minioadmin
-storage.minio.secret-key: minioadmin
-
-# Elasticsearch
-elasticsearch.host: localhost
-elasticsearch.port: 9200
+```bash
+export ARGUS_RAG_JWT_SECRET='<至少 32 字节的随机字符串>'
+export DASHSCOPE_API_KEY='<你的百炼 Key>'
+export OPENAI_API_KEY='<你的百炼 Key>'
 ```
 
 ### 3️⃣ 启动后端
@@ -334,13 +337,16 @@ elasticsearch.port: 9200
 # 设置 JDK 21
 export JAVA_HOME="/path/to/jdk-21"
 
+# 设置 JWT 签名密钥（必填，至少 32 字节）
+export ARGUS_RAG_JWT_SECRET='<至少 32 字节的随机字符串>'
+
 cd Argus-backend
 
 # 编译
 ./mvnw clean compile
 
-# 启动（默认 local 环境，端口 10001）
-./mvnw spring-boot:run
+# 启动（使用 dev 配置，端口 10001）
+./mvnw spring-boot:run -Dspring-boot.run.profiles=dev
 
 # API 文档：http://localhost:10001/doc.html
 ```
@@ -358,11 +364,31 @@ npm run dev
 
 ### 🔑 默认账户
 
-开发环境（`--spring.profiles.active=dev`）自动创建管理员账户：
+开发环境（`-Dspring-boot.run.profiles=dev`）会自动创建/刷新管理员账户：
 
 | 用户名 | 密码 | 角色 |
 |--------|------|------|
 | `admin` | `admin123` | 系统管理员 |
+
+> `admin123` 是 dev 环境的**本地开发默认口令**（由 `DevAdminInitializer` 写入），仅适用于本地开发；可通过环境变量 `ARGUS_RAG_DEV_ADMIN_PASSWORD` 覆盖。生产环境必须显式覆盖，不得使用该默认值。
+
+### 🧪 运行测试
+
+默认 `./mvnw test` 只运行单元测试；数据库集成测试通过环境变量门禁开启，默认跳过：
+
+```bash
+# 前置：PostgreSQL 已就绪，且已创建独立测试库与专用账号（见下）
+export ARGUS_INTEGRATION=true
+export TEST_DB_USERNAME='argus_rag_test'   # 可选，默认即 argus_rag_test
+export TEST_DB_PASSWORD='<测试账号口令>'     # 必填，无默认值
+
+cd Argus-backend
+./mvnw test
+```
+
+集成测试使用**独立测试库**，固定连接 `jdbc:postgresql://localhost:5433/argus_rag_test`，不会触碰开发库 `argus_rag`。测试账号需预先创建，并仅授予 `argus_rag_test` 库的权限（不要授予 `argus_rag` 库任何权限）。
+
+> ✅ 集成测试已实际运行验证：需预先创建独立测试库 `argus_rag_test` 与专用账号（仅授予该库权限，不要授予 `argus_rag` 库权限），并设置 `TEST_DB_PASSWORD` 环境变量。
 
 <br/>
 
@@ -448,6 +474,22 @@ npm run dev
 | POST | `/api/assistant/chat/stream` | 流式聊天（SSE，逐字推送） |
 | GET | `/api/assistant/sessions/{id}/context` | 获取会话上下文（含摘要） |
 
+### 工单管理 · `/api/tickets`
+
+| 方法 | 路径 | 说明 |
+|------|------|------|
+| POST | `/api/tickets` | 创建工单（初始状态 OPEN） |
+| GET | `/api/tickets` | 查询当前用户可见的工单列表 |
+| GET | `/api/tickets/{id}` | 查询工单详情 |
+| GET | `/api/tickets/{id}/executions` | 查询工单执行尝试历史 |
+| POST | `/api/tickets/{id}/submit` | 提交审批（创建人，OPEN→待审批） |
+| POST | `/api/tickets/{id}/approve` | 审批通过（管理员） |
+| POST | `/api/tickets/{id}/reject` | 审批拒绝（管理员） |
+| POST | `/api/tickets/{id}/execute` | 执行账号开通（管理员） |
+| POST | `/api/tickets/{id}/dispose` | 人工处置（管理员） |
+| POST | `/api/tickets/{id}/close` | 关闭工单（RESOLVED→CLOSED） |
+| POST | `/api/tickets/{id}/cancel` | 取消工单（创建人） |
+
 <br/>
 
 ## 📁 项目结构
@@ -471,6 +513,11 @@ Argus/
 │       │   ├── agent/                      #   Agent 工厂 + 知识库检索工具
 │       │   ├── memory/                     #   三级短期记忆压缩
 │       │   └── service/                    #   对话编排 + 会话管理
+│       ├── ticket/                         # 工单平台（状态机/审批/执行/处置/评测）
+│       │   ├── controller/                 #   工单 REST 接口
+│       │   ├── service/                    #   建单/审批/执行/处置服务
+│       │   ├── executor/                   #   账号开通执行器
+│       │   └── model/                      #   实体/枚举/DTO/VO
 │       └── engine/                         # 基础设施（ES/PGvector/MinIO）
 │
 ├── Argus-frontend/                         # Vue 3 前端
@@ -508,6 +555,7 @@ Argus 采用**渐进式迭代**的开发方式，每个版本聚焦一个核心�
 | **V2.0** | 📄 文档引擎 | 分片上传（断点续传/秒传）、ETL 流水线、双路检索（向量 + 关键词） |
 | **V3.0** | 🧠 RAG 问答 | 查询规划（LLM）、RRF 融合排序、四级证据评估、引用溯源 |
 | **V4.0** | 🤖 AI Agent | ReactAgent 图引擎、CHAT/KB_SEARCH 双模式、短期记忆三级压缩、SSE 流式 |
+| **V5.0** | 🎫 智能工单平台 | 工单 9 状态状态机、审批与受控执行、Agent 工单工具、100 条评测集与基线对比 |
 
 > 详细的设计决策和技术文档请参阅 [`docs/`](docs/) 目录。
 

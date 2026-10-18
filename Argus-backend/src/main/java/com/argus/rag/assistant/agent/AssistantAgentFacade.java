@@ -10,6 +10,7 @@ import com.argus.rag.assistant.model.enums.AssistantToolMode;
 import com.argus.rag.assistant.model.vo.chat.AssistantAgentResult;
 import com.argus.rag.assistant.support.config.AssistantPromptContextBuilder;
 import com.argus.rag.assistant.support.config.AssistantRunnableConfigFactory;
+import com.argus.rag.common.enums.SystemRole;
 import com.argus.rag.common.exception.BusinessException;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
@@ -51,18 +52,22 @@ public class AssistantAgentFacade {
      * 同步执行对话，返回助手的文本回复和引用列表。</p>
      *
      * @param userId      当前用户 ID
+     * @param systemRole  当前用户角色，仅 TICKET_QUERY 模式生效
      * @param sessionId   当前会话 ID
-     * @param toolMode    工具模式（CHAT 仅对话 / KB_SEARCH 知识库检索）
+     * @param toolMode    工具模式（CHAT 仅对话 / KB_SEARCH 知识库检索 / TICKET_QUERY 工单查询）
      * @param groupId     知识库组 ID，CHAT 模式下可传 {@code null}
+     * @param messageId   当前用户消息 ID，仅 TICKET_ASSIST 模式生效，作为建单的消息级幂等边界
      * @param userMessage 用户输入的文本
      * @return 包含助手回复文本和引用列表的结果对象
      * @throws com.argus.rag.common.exception.BusinessException 当 Agent 调用失败或返回内容为空时
      */
     public AssistantAgentResult chat(
             Long userId,
+            SystemRole systemRole,
             Long sessionId,
             AssistantToolMode toolMode,
             Long groupId,
+            Long messageId,
             String userMessage
     ) {
         // 这里把“仅对话模式”的运行时输入收口成两部分：
@@ -82,7 +87,8 @@ public class AssistantAgentFacade {
         );
         // 当前虽然是“仅对话模式”，底层仍然使用 ReactAgent，只是 system prompt 已改成纯对话风格。
         AssistantKnowledgeBaseToolResultHolder resultHolder = new AssistantKnowledgeBaseToolResultHolder();
-        ReactAgent agent = assistantReactAgentFactory.createAgent(instruction, toolMode, groupId, resultHolder);
+        ReactAgent agent = assistantReactAgentFactory.createAgent(
+                instruction, toolMode, groupId, resultHolder, userId, systemRole, messageId);
         AssistantMessage assistantMessage;
         try {
             assistantMessage = agent.call(userMessage, runnableConfig);
@@ -101,7 +107,7 @@ public class AssistantAgentFacade {
                     assistantMessage == null || assistantMessage.getToolCalls() == null ? 0 : assistantMessage.getToolCalls().size()
             );
         }
-        if (assistantMessage == null || assistantMessage.getText() == null || assistantMessage.getText().isBlank()) {
+        if (!isValidFinalAssistantMessage(assistantMessage)) {
             throw new BusinessException("助手返回内容为空");
         }
         return new AssistantAgentResult(assistantMessage.getText(), resultHolder.currentCitations());
@@ -114,9 +120,11 @@ public class AssistantAgentFacade {
      * <p>内部处理流式节点的输出拼接与去重，确保最终返回完整的助手回复。</p>
      *
      * @param userId        当前用户 ID
+     * @param systemRole    当前用户角色，仅 TICKET_QUERY 模式生效
      * @param sessionId     当前会话 ID
-     * @param toolMode      工具模式（CHAT 仅对话 / KB_SEARCH 知识库检索）
+     * @param toolMode      工具模式（CHAT 仅对话 / KB_SEARCH 知识库检索 / TICKET_QUERY 工单查询）
      * @param groupId       知识库组 ID，CHAT 模式下可传 {@code null}
+     * @param messageId     当前用户消息 ID，仅 TICKET_ASSIST 模式生效，作为建单的消息级幂等边界
      * @param userMessage   用户输入的文本
      * @param deltaConsumer 流式文本增量回调，每个增量片段都会调用此回调
      * @return 包含助手完整回复文本和引用列表的结果对象
@@ -124,9 +132,11 @@ public class AssistantAgentFacade {
      */
     public AssistantAgentResult streamChat(
             Long userId,
+            SystemRole systemRole,
             Long sessionId,
             AssistantToolMode toolMode,
             Long groupId,
+            Long messageId,
             String userMessage,
             Consumer<String> deltaConsumer
     ) {
@@ -143,7 +153,8 @@ public class AssistantAgentFacade {
                 groupId
         );
         AssistantKnowledgeBaseToolResultHolder resultHolder = new AssistantKnowledgeBaseToolResultHolder();
-        ReactAgent agent = assistantReactAgentFactory.createAgent(instruction, toolMode, groupId, resultHolder);
+        ReactAgent agent = assistantReactAgentFactory.createAgent(
+                instruction, toolMode, groupId, resultHolder, userId, systemRole, messageId);
         StringBuilder finalReply = new StringBuilder();
         try {
             // stream() 返回的是图执行过程中的节点输出，这里只抽取模型实际产出的文本 delta。
@@ -165,7 +176,7 @@ public class AssistantAgentFacade {
                     resultHolder.currentCitations().size()
             );
         }
-        if (reply.isBlank()) {
+        if (!hasUsableReplyText(reply)) {
             throw new BusinessException("助手返回内容为空");
         }
         return new AssistantAgentResult(reply, resultHolder.currentCitations());
@@ -231,5 +242,34 @@ public class AssistantAgentFacade {
             return normalized.substring(0, 200) + "...";
         }
         return normalized;
+    }
+
+    /**
+     * 判断 AssistantMessage 是否为有效的最终回答。
+     * <p>先检查工具调用，再检查文本：仍携带工具调用的消息（即使文本非空）只是
+     * 「模型请求调用工具」的中间产物，不是面向用户的最终答复，必须拒绝。</p>
+     */
+    private boolean isValidFinalAssistantMessage(AssistantMessage message) {
+        if (message == null) {
+            return false;
+        }
+        // 优先检查工具调用：工具调用消息不是最终回答，即使其文本非空。
+        if (message.hasToolCalls()) {
+            return false;
+        }
+        return hasUsableReplyText(message.getText());
+    }
+
+    /**
+     * 判断文本是否为可用的最终回答：非 null、非空串、非纯空白、非字面量 "null"（忽略首尾空白）。
+     * <p>字面量 "null" 来自第三方图框架的状态序列化往返（Jackson NullNode.asText()），
+     * 并非真实用户可见内容，必须按无效回答处理。</p>
+     */
+    private boolean hasUsableReplyText(String text) {
+        if (text == null) {
+            return false;
+        }
+        String trimmed = text.trim();
+        return !trimmed.isEmpty() && !"null".equals(trimmed);
     }
 }

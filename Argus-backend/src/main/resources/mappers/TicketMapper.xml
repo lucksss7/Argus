@@ -1,0 +1,49 @@
+<?xml version="1.0" encoding="UTF-8" ?>
+<!DOCTYPE mapper
+        PUBLIC "-//mybatis.org//DTD Mapper 3.0//EN"
+        "http://mybatis.org/dtd/mybatis-3-mapper.dtd">
+<mapper namespace="com.argus.rag.ticket.mapper.TicketMapper">
+
+    <!-- 插入并容忍唯一约束冲突：命中幂等键/工单号唯一约束时返回 0 行而非抛异常（仅 PostgreSQL） -->
+    <insert id="insertIgnoreConflict" useGeneratedKeys="true" keyProperty="id">
+        insert into tickets (
+            ticket_no, title, description, type, status, priority,
+            creator_user_id, assignee_user_id, approver_user_id,
+            system_name, target_username, permission_level, resolution,
+            version, idempotency_key, created_at, updated_at
+        ) values (
+            #{ticketNo}, #{title}, #{description}, #{type}, #{status}, #{priority},
+            #{creatorUserId}, #{assigneeUserId}, #{approverUserId},
+            #{systemName}, #{targetUsername}, #{permissionLevel}, #{resolution},
+            #{version}, #{idempotencyKey}, #{createdAt}, #{updatedAt}
+        )
+        on conflict do nothing
+    </insert>
+
+    <update id="updateTicketStatus">
+        update tickets
+        set status = #{toStatus},
+            updated_at = now()
+        where id = #{id}
+          and status = #{fromStatus}
+    </update>
+
+    <update id="updateTicketDecision">
+        update tickets
+        set status = #{toStatus},
+            approver_user_id = #{approverUserId},
+            updated_at = now()
+        where id = #{id}
+          and status = #{fromStatus}
+    </update>
+
+    <!-- 仅当工单仍为 APPROVED 时原子递增额外执行额度，与执行的 APPROVED -> IN_PROGRESS 条件更新串行化 -->
+    <update id="incrementExtraAttempts">
+        update tickets
+        set extra_attempts = extra_attempts + 1,
+            updated_at = now()
+        where id = #{id}
+          and status = 'APPROVED'
+    </update>
+
+</mapper>

@@ -9,10 +9,17 @@ spring:
   application:
     name: argus-service
   datasource:
-    url: jdbc:postgresql://${DB_HOST:localhost}:${DB_PORT:5432}/${DB_NAME:argus_rag}
-    username: ${DB_USERNAME:your-db-username}
-    password: ${DB_PASSWORD:your-db-password}
+    url: jdbc:postgresql://${DB_HOST:localhost}:${DB_PORT:5433}/${DB_NAME:argus_rag}
+    username: ${DB_USERNAME:root}
+    password: ${DB_PASSWORD:123456}
     driver-class-name: org.postgresql.Driver
+
+  # Flyway 数据库版本迁移
+  # baseline-on-migrate：现有库非空且无 history 表时，先打基线而不是报错
+  # baseline-version=0：让 V1 及以后的迁移能正常执行（默认 1 会导致 V1 被跳过）
+  flyway:
+    baseline-on-migrate: true
+    baseline-version: 0
 
   # ──────────────────────────────────────────────
   # Spring AI Alibaba — DashScope 原生配置
@@ -66,27 +73,26 @@ spring:
 storage:
   minio:
     endpoint: ${MINIO_ENDPOINT:http://localhost:9000}
-    access-key: ${MINIO_ACCESS_KEY:your-minio-access-key}
-    secret-key: ${MINIO_SECRET_KEY:your-minio-secret-key}
+    access-key: ${MINIO_ACCESS_KEY:minioadmin}
+    secret-key: ${MINIO_SECRET_KEY:minioadmin}
     bucket: ${MINIO_BUCKET:argus-rag-documents}
 
 argus:
   rag:
     auth:
-      jwt-secret: ${ARGUS_RAG_JWT_SECRET:change-me-to-a-32byte-secret-key}
+      # 必须通过环境变量 ARGUS_RAG_JWT_SECRET 显式提供（至少 32 字节），无默认值；未设置时启动失败。
+      jwt-secret: ${ARGUS_RAG_JWT_SECRET}
       issuer: argus-rag
       access-token-expire-minutes: 30
       refresh-token-expire-days: 14
-      # 仅开发环境兜底，生产环境仍应显式配置安全密钥。
-      #    jwt-secret: ${ARGUS_RAG_JWT_SECRET:argus_rag-dev-jwt-secret-2026-04-20-32bytes}
       refresh-cookie-name: ARGUS_RAG_REFRESH_TOKEN
       refresh-cookie-secure: false
     dev-admin:
-      username: ${ARGUS_RAG_DEV_ADMIN_USERNAME:your-admin-username}
-      email: ${ARGUS_RAG_DEV_ADMIN_EMAIL:your-admin-email@example.com}
-      display-name: ${ARGUS_RAG_DEV_ADMIN_DISPLAY_NAME:your-display-name}
-      password: ${ARGUS_RAG_DEV_ADMIN_PASSWORD:your-admin-password}
-      user-code: ${ARGUS_RAG_DEV_ADMIN_USER_CODE:your-admin-code}
+      username: ${ARGUS_RAG_DEV_ADMIN_USERNAME:admin}
+      email: ${ARGUS_RAG_DEV_ADMIN_EMAIL:admin@argus.local}
+      display-name: ${ARGUS_RAG_DEV_ADMIN_DISPLAY_NAME:管理员}
+      password: ${ARGUS_RAG_DEV_ADMIN_PASSWORD:admin123}
+      user-code: ${ARGUS_RAG_DEV_ADMIN_USER_CODE:admin}
 
 elasticsearch:
   host: ${ES_HOST:localhost}

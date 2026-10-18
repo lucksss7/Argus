@@ -169,7 +169,7 @@ public class AssistantConversationService {
             Long sessionId,
             int recentLimit
     ) {
-        Long currentUserId = currentUserService.requireBusinessUser().userId();
+        Long currentUserId = currentUserService.getRequiredCurrentUser().userId();
         AssistantConversationContext context = loadConversationContext(currentUserId, sessionId, recentLimit);
         return new AssistantConversationContextVO(context.summaryText(), context.recentMessages());
     }
@@ -275,16 +275,14 @@ public class AssistantConversationService {
     }
 
     private Long normalizeGroupId(AssistantToolMode toolMode, Long groupId) {
-        if (groupId != null && groupId <= 0) {
-            throw new BusinessException("groupId 非法");
+        if (toolMode == AssistantToolMode.KB_SEARCH) {
+            if (groupId == null || groupId <= 0) {
+                throw new BusinessException("KB_SEARCH 模式必须提供 groupId");
+            }
+            return groupId;
         }
-        if (toolMode == AssistantToolMode.CHAT) {
-            return null;
-        }
-        if (groupId == null) {
-            throw new BusinessException("KB_SEARCH 模式必须提供 groupId");
-        }
-        return groupId;
+        // CHAT / TICKET_QUERY / TICKET_ASSIST 均不适用 groupId，统一落库为 null。
+        return null;
     }
 
     private String normalizeStructuredPayload(String structuredPayload) {

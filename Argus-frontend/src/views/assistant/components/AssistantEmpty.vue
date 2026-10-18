@@ -1,7 +1,8 @@
 <script setup lang="ts">
+import { computed } from 'vue'
 import type { AssistantToolMode } from '@/types/assistant'
 
-defineProps<{
+const props = defineProps<{
   mode: AssistantToolMode
   hasKb: boolean
 }>()
@@ -23,6 +24,34 @@ const kbStarters = [
   { title: '步骤指引', prompt: '根据知识库，给出完成「XXX 任务」的完整步骤与注意事项。', icon: 'steps' },
   { title: '源头追溯', prompt: '关于「XXX」这个结论，知识库里有哪些文档支撑？请列出证据。', icon: 'link' },
 ]
+
+const ticketStarters = [
+  { title: '我的工单', prompt: '帮我查一下我名下的工单都有哪些？分别是什么状态？', icon: 'ticket' },
+  { title: '按状态查', prompt: '帮我列出状态为「待审批」的工单。', icon: 'filter' },
+  { title: '最近工单', prompt: '我最近创建的工单有哪些？分别处于什么状态？', icon: 'clock' },
+  { title: '单个工单', prompt: '帮我查一下工单 TK… 的当前状态和处理进度。', icon: 'search' },
+]
+
+const isKb = computed(() => props.mode === 'KB_SEARCH')
+const isTicket = computed(() => props.mode === 'TICKET_QUERY')
+
+const eyebrow = computed(() => {
+  if (props.mode === 'CHAT') return 'Conversational Agent · Argus'
+  if (props.mode === 'KB_SEARCH') return 'Knowledge-Base Retrieval · Argus'
+  return 'Ticket Query · Argus'
+})
+
+const titleLine = computed(() => {
+  if (props.mode === 'CHAT') return '自由对话'
+  if (props.mode === 'KB_SEARCH') return '知识库检索'
+  return '工单查询'
+})
+
+const starters = computed(() => {
+  if (props.mode === 'CHAT') return chatStarters
+  if (props.mode === 'KB_SEARCH') return kbStarters
+  return ticketStarters
+})
 </script>
 
 <template>
@@ -36,7 +65,7 @@ const kbStarters = [
 
     <div class="aempty__inner">
       <!-- Mark -->
-      <div class="aempty__mark" :class="{ 'is-kb': mode === 'KB_SEARCH' }">
+      <div class="aempty__mark" :class="{ 'is-kb': isKb, 'is-ticket': isTicket }">
         <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.6" stroke-linecap="round" stroke-linejoin="round">
           <polygon points="13 2 3 14 12 14 11 22 21 10 12 10 13 2" />
         </svg>
@@ -45,13 +74,13 @@ const kbStarters = [
       </div>
 
       <p class="aempty__eyebrow">
-        {{ mode === 'CHAT' ? 'Conversational Agent · Argus' : 'Knowledge-Base Retrieval · Argus' }}
+        {{ eyebrow }}
       </p>
 
       <h1 class="aempty__title">
         <span class="aempty__title-line">开启一次</span>
-        <span class="aempty__title-line aempty__title-line--accent" :class="{ 'is-kb': mode === 'KB_SEARCH' }">
-          {{ mode === 'CHAT' ? '自由对话' : '知识库检索' }}
+        <span class="aempty__title-line aempty__title-line--accent" :class="{ 'is-kb': isKb, 'is-ticket': isTicket }">
+          {{ titleLine }}
         </span>
       </h1>
 
@@ -59,21 +88,24 @@ const kbStarters = [
         <template v-if="mode === 'CHAT'">
           让 Argus Agent 陪你头脑风暴、解释概念、审代码、做对比 — 所有回答都会保存到会话历史里。
         </template>
-        <template v-else>
+        <template v-else-if="isKb">
           在指定知识库范围内提问，Agent 会先检索相关文档，再给出带引用溯源的答案。
           <span v-if="!hasKb" class="aempty__subtitle-warn">请先在下方输入框选择一个知识库。</span>
+        </template>
+        <template v-else>
+          用自然语言查询你名下（管理员为全部）的工单，Agent 会调用工单查询工具并汇报状态。
         </template>
       </p>
 
       <!-- Starters -->
       <div class="aempty__starters">
         <button
-          v-for="(item, i) in (mode === 'CHAT' ? chatStarters : kbStarters)"
+          v-for="(item, i) in starters"
           :key="`${mode}-${item.title}`"
           class="aempty__starter"
-          :class="{ 'is-kb': mode === 'KB_SEARCH' }"
+          :class="{ 'is-kb': isKb, 'is-ticket': isTicket }"
           type="button"
-          :disabled="mode === 'KB_SEARCH' && !hasKb"
+          :disabled="isKb && !hasKb"
           :style="{ animationDelay: `${0.08 * i + 0.1}s` }"
           @click="emit('pick', item.prompt, mode)"
         >
@@ -114,6 +146,30 @@ const kbStarters = [
               <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round">
                 <polyline points="9 11 12 14 22 4" />
                 <path d="M21 12v7a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2h11" />
+              </svg>
+            </template>
+            <template v-else-if="item.icon === 'ticket'">
+              <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round">
+                <rect x="5" y="4" width="14" height="17" rx="2" />
+                <path d="M9 4.5V3.5C9 2.95 9.45 2.5 10 2.5h4c.55 0 1 .45 1 1v1" />
+                <path d="M8.5 12l2 2 5-5" />
+              </svg>
+            </template>
+            <template v-else-if="item.icon === 'filter'">
+              <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round">
+                <polygon points="22 3 2 3 10 12.46 10 19 14 21 14 12.46 22 3" />
+              </svg>
+            </template>
+            <template v-else-if="item.icon === 'clock'">
+              <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round">
+                <circle cx="12" cy="12" r="10" />
+                <polyline points="12 6 12 12 16 14" />
+              </svg>
+            </template>
+            <template v-else-if="item.icon === 'search'">
+              <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round">
+                <circle cx="11" cy="11" r="7" />
+                <path d="M21 21l-4.35-4.35" />
               </svg>
             </template>
             <template v-else>
@@ -235,6 +291,13 @@ const kbStarters = [
     0 0 0 8px rgba(92, 201, 193, 0.08);
 }
 
+.aempty__mark.is-ticket {
+  background: linear-gradient(135deg, #f59e0b, #d97706);
+  box-shadow:
+    0 10px 28px rgba(245, 158, 11, 0.3),
+    0 0 0 8px rgba(245, 158, 11, 0.08);
+}
+
 .aempty__mark svg {
   width: 28px;
   height: 28px;
@@ -250,6 +313,10 @@ const kbStarters = [
 
 .aempty__mark.is-kb .aempty__mark-orbit {
   border-color: rgba(92, 201, 193, 0.25);
+}
+
+.aempty__mark.is-ticket .aempty__mark-orbit {
+  border-color: rgba(245, 158, 11, 0.25);
 }
 
 .aempty__mark-orbit--1 {
@@ -312,6 +379,13 @@ const kbStarters = [
   -webkit-text-fill-color: transparent;
 }
 
+.aempty__title-line--accent.is-ticket {
+  background: linear-gradient(135deg, #f59e0b, #d97706);
+  -webkit-background-clip: text;
+  background-clip: text;
+  -webkit-text-fill-color: transparent;
+}
+
 .aempty__subtitle {
   margin: 0 0 22px;
   font-size: 0.95rem;
@@ -369,6 +443,11 @@ const kbStarters = [
   box-shadow: 0 10px 24px rgba(92, 201, 193, 0.12);
 }
 
+.aempty__starter.is-ticket:hover:not(:disabled) {
+  border-color: #d97706;
+  box-shadow: 0 10px 24px rgba(245, 158, 11, 0.12);
+}
+
 .aempty__starter:hover:not(:disabled) .aempty__starter-arrow {
   color: var(--brand-primary);
   transform: translateX(2px);
@@ -376,6 +455,10 @@ const kbStarters = [
 
 .aempty__starter.is-kb:hover:not(:disabled) .aempty__starter-arrow {
   color: var(--brand-accent-dark);
+}
+
+.aempty__starter.is-ticket:hover:not(:disabled) .aempty__starter-arrow {
+  color: #d97706;
 }
 
 .aempty__starter:disabled {
@@ -398,6 +481,11 @@ const kbStarters = [
 .aempty__starter.is-kb .aempty__starter-icon {
   background: rgba(92, 201, 193, 0.1);
   color: var(--brand-accent-dark);
+}
+
+.aempty__starter.is-ticket .aempty__starter-icon {
+  background: rgba(245, 158, 11, 0.1);
+  color: #d97706;
 }
 
 .aempty__starter-icon svg {

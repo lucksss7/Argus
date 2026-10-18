@@ -12,5 +12,15 @@ public enum AssistantToolMode {
     /**
      * 知识库检索模式，允许 Agent 调用知识库检索工具获取相关证据后生成回答
      */
-    KB_SEARCH
+    KB_SEARCH,
+    /**
+     * 工单查询模式，允许 Agent 调用 queryTickets 工具查询当前登录用户可见的工单列表
+     */
+    TICKET_QUERY,
+    /**
+     * 工单助手模式，允许 Agent 以自然语言创建工单（createTicket），并查询当前登录用户
+     * 可见的工单列表、详情与执行记录。Agent 只能创建 + 只读查询，不能提交审批、审批、
+     * 执行、关闭或取消工单。
+     */
+    TICKET_ASSIST
 }

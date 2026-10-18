@@ -49,6 +49,18 @@ const router = createRouter({
           meta: { title: 'AI 助手' },
         },
         {
+          path: 'tickets',
+          name: 'tickets',
+          component: () => import('../views/tickets/TicketListView.vue'),
+          meta: { title: '工单管理' },
+        },
+        {
+          path: 'tickets/:ticketId',
+          name: 'ticket-detail',
+          component: () => import('../views/tickets/TicketDetailView.vue'),
+          meta: { title: '工单详情' },
+        },
+        {
           path: 'groups',
           name: 'groups',
           component: () => import('../views/groups/GroupsPage.vue'),

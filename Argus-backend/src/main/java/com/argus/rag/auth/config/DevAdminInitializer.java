@@ -38,7 +38,7 @@ public class DevAdminInitializer implements ApplicationRunner {
             @Value("${argus.rag.dev-admin.username:admin}") String username,
             @Value("${argus.rag.dev-admin.email:admin@local.argus-rag.test}") String email,
             @Value("${argus.rag.dev-admin.display-name:开发环境管理员}") String displayName,
-            @Value("${argus.rag.dev-admin.password:Admin@123456}") String password,
+            @Value("${argus.rag.dev-admin.password}") String password,
             @Value("${argus.rag.dev-admin.user-code:admin}") String userCode
     ) {
         this.userMapper = userMapper;

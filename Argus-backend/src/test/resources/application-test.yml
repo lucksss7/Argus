@@ -1,0 +1,36 @@
+# 集成测试专用配置（@ActiveProfiles("test")）。
+# 连接独立测试库 argus_rag_test，不触碰开发库 argus_rag。
+# 仅在设置环境变量 ARGUS_INTEGRATION=true 时，测试类 TicketExecutionIntegrationTest 才会被激活运行。
+spring:
+  datasource:
+    url: jdbc:postgresql://localhost:5433/argus_rag_test
+    username: ${TEST_DB_USERNAME:argus_rag_test}
+    password: ${TEST_DB_PASSWORD}
+    driver-class-name: org.postgresql.Driver
+  flyway:
+    baseline-on-migrate: true
+    baseline-version: 0
+  # 聚焦切片里 @EnableAutoConfiguration 会触发 classpath 上所有 Spring AI 自动配置，
+  # 其中 DashScope / OpenAI 需要 api-key（无 key 时工厂方法直接抛异常）。测试只关心
+  # PostgreSQL + MyBatis-Plus + 事务，故显式排除这些模型/向量库自动配置，避免启动失败。
+  autoconfigure:
+    exclude:
+      # Spring AI Alibaba — DashScope（8 个）
+      - com.alibaba.cloud.ai.autoconfigure.dashscope.DashScopeChatAutoConfiguration
+      - com.alibaba.cloud.ai.autoconfigure.dashscope.DashScopeAgentAutoConfiguration
+      - com.alibaba.cloud.ai.autoconfigure.dashscope.DashScopeImageAutoConfiguration
+      - com.alibaba.cloud.ai.autoconfigure.dashscope.DashScopeVideoAutoConfiguration
+      - com.alibaba.cloud.ai.autoconfigure.dashscope.DashScopeAudioSpeechAutoConfiguration
+      - com.alibaba.cloud.ai.autoconfigure.dashscope.DashScopeAudioTranscriptionAutoConfiguration
+      - com.alibaba.cloud.ai.autoconfigure.dashscope.DashScopeRerankAutoConfiguration
+      - com.alibaba.cloud.ai.autoconfigure.dashscope.DashScopeEmbeddingAutoConfiguration
+      # Spring AI — OpenAI（6 个）
+      - org.springframework.ai.model.openai.autoconfigure.OpenAiChatAutoConfiguration
+      - org.springframework.ai.model.openai.autoconfigure.OpenAiEmbeddingAutoConfiguration
+      - org.springframework.ai.model.openai.autoconfigure.OpenAiImageAutoConfiguration
+      - org.springframework.ai.model.openai.autoconfigure.OpenAiAudioSpeechAutoConfiguration
+      - org.springframework.ai.model.openai.autoconfigure.OpenAiAudioTranscriptionAutoConfiguration
+      - org.springframework.ai.model.openai.autoconfigure.OpenAiModerationAutoConfiguration
+      # 向量库 / 聊天客户端（依赖模型 Bean，排除模型后自然失效，仍显式排除以明确边界）
+      - org.springframework.ai.vectorstore.pgvector.autoconfigure.PgVectorStoreAutoConfiguration
+      - org.springframework.ai.model.chat.client.autoconfigure.ChatClientAutoConfiguration

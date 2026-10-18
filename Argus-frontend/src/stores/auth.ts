@@ -17,6 +17,10 @@ const ACCOUNT_SECURITY_PATH = '/app/settings'
 const LOGIN_PATH = '/login'
 const BUSINESS_PATH_PREFIXES = ['/app/groups', '/app/documents', '/app/qa', '/app/assistant']
 
+// 管理员额外放行的业务路径：后端 TICKET_QUERY 模式允许系统管理员查询全部工单，
+// 因此管理员可进入 AI 助手页面（前端仅对其开放工单查询模式，最终仍由后端校验权限）。
+const ADMIN_ACCESSIBLE_BUSINESS_PREFIXES = ['/app/assistant']
+
 interface AuthState {
   accessToken: string | null
   currentUser: CurrentUserProfile | null
@@ -181,7 +185,11 @@ export function resolveRoleRedirect(user: CurrentUserProfile, requestedPath: str
     return ACCOUNT_SECURITY_PATH
   }
 
-  if (user.systemRole === 'ADMIN' && isBusinessPath(requestedPath)) {
+  if (
+    user.systemRole === 'ADMIN' &&
+    isBusinessPath(requestedPath) &&
+    !isAdminAccessibleBusinessPath(requestedPath)
+  ) {
     return ADMIN_HOME_PATH
   }
 
@@ -219,4 +227,10 @@ function isAdminPath(path: string | null): path is string {
 
 function isBusinessPath(path: string | null): path is string {
   return BUSINESS_PATH_PREFIXES.some((prefix) => path === prefix || path?.startsWith(`${prefix}/`))
+}
+
+function isAdminAccessibleBusinessPath(path: string | null): boolean {
+  return ADMIN_ACCESSIBLE_BUSINESS_PREFIXES.some(
+    (prefix) => path === prefix || path?.startsWith(`${prefix}/`),
+  )
 }

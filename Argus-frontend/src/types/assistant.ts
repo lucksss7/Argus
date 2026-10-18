@@ -4,9 +4,10 @@
 //
 // 领域概述
 // ─────────
-// "助手"（Assistant）是一个多轮对话 AI Agent，支持两种工具模式：
+// "助手"（Assistant）是一个多轮对话 AI Agent，支持三种工具模式：
 //   1. CHAT —— 自由对话，Agent 可自主调用工具完成复杂任务
 //   2. KB_SEARCH —— 知识库检索，在指定群组知识库范围内搜索并生成带引用的回答
+//   3. TICKET_QUERY —— 工单查询，Agent 调用 queryTickets 工具查询当前登录用户可见的工单
 //
 // 会话（Session）是对话的顶层容器，一个用户可拥有多个会话。
 // 每个会话内包含多条消息（Message），消息角色分为 USER / ASSISTANT / TOOL。
@@ -26,8 +27,10 @@
  * Assistant Agent 每次对话需指定一种工具模式，决定其可调用的工具集：
  * - `CHAT`：自由对话模式，Agent 可以搜索知识库、计算、调用外部 API
  * - `KB_SEARCH`：知识库检索模式，限定在指定群组知识库中搜索并生成带引用回答
+ * - `TICKET_QUERY`：工单查询模式，Agent 调用 queryTickets 工具查询当前登录用户可见的工单
+ * - `TICKET_ASSIST`：工单助手模式，Agent 可创建工单并只读查询工单、详情与执行记录
  */
-export type AssistantToolMode = 'CHAT' | 'KB_SEARCH'
+export type AssistantToolMode = 'CHAT' | 'KB_SEARCH' | 'TICKET_QUERY' | 'TICKET_ASSIST'
 
 /**
  * 消息角色

@@ -308,26 +308,15 @@ docker restart elasticsearch
 
 ### 2. Configure Environment
 
-Edit `Argus-backend/src/main/resources/application-local.yml` and fill in database, middleware, and LLM settings:
+Backend configuration lives in `Argus-backend/src/main/resources/application-dev.yml`, using `${ENV_VAR:default}` syntax. Database / MinIO / Elasticsearch already have local-development defaults; only two items must be provided explicitly:
 
-```yaml
-# Database
-spring.datasource.url: jdbc:postgresql://localhost:5432/argus_rag
-spring.datasource.username: your_username
-spring.datasource.password: your_password
+- **`ARGUS_RAG_JWT_SECRET` (required, no default)**: JWT signing key, at least 32 bytes; the backend fails to start without it.
+- **`DASHSCOPE_API_KEY` / `OPENAI_API_KEY`**: required for LLM and Embedding (both share the same key).
 
-# LLM
-spring.ai.dashscope.api-key: ${DASHSCOPE_API_KEY}
-spring.ai.openai.api-key: ${DASHSCOPE_API_KEY}  # Shared with DashScope
-
-# Object storage (optional)
-storage.minio.endpoint: http://localhost:9000
-storage.minio.access-key: minioadmin
-storage.minio.secret-key: minioadmin
-
-# Elasticsearch
-elasticsearch.host: localhost
-elasticsearch.port: 9200
+```bash
+export ARGUS_RAG_JWT_SECRET='<random string of at least 32 bytes>'
+export DASHSCOPE_API_KEY='<your key>'
+export OPENAI_API_KEY='<your key>'
 ```
 
 ### 3. Start Backend
@@ -336,13 +325,16 @@ elasticsearch.port: 9200
 # Set JDK 21
 export JAVA_HOME="/path/to/jdk-21"
 
+# Set the JWT signing key (required, at least 32 bytes)
+export ARGUS_RAG_JWT_SECRET='<random string of at least 32 bytes>'
+
 cd Argus-backend
 
 # Compile
 ./mvnw clean compile
 
-# Start. The default profile is local, and the default port is 10001.
-./mvnw spring-boot:run
+# Start (uses the dev profile, port 10001)
+./mvnw spring-boot:run -Dspring-boot.run.profiles=dev
 
 # API docs: http://localhost:10001/doc.html
 ```
@@ -360,11 +352,31 @@ npm run dev
 
 ### Default Account
 
-In the development environment (`--spring.profiles.active=dev`), an administrator account is created automatically:
+In the development environment (`-Dspring-boot.run.profiles=dev`), an administrator account is created/refreshed automatically:
 
 | Username | Password | Role |
 |--------|------|------|
 | `admin` | `admin123` | System Administrator |
+
+> `admin123` is the **local-development default password** for the dev environment (written by `DevAdminInitializer`) and is only meant for local development; override it via the `ARGUS_RAG_DEV_ADMIN_PASSWORD` environment variable. Production must set an explicit value and never use this default.
+
+### Running Tests
+
+`./mvnw test` runs unit tests only by default; database integration tests are gated behind an environment variable and skipped otherwise:
+
+```bash
+# Prerequisite: PostgreSQL is up, and a dedicated test database + account already exist (see below)
+export ARGUS_INTEGRATION=true
+export TEST_DB_USERNAME='argus_rag_test'   # optional, defaults to argus_rag_test
+export TEST_DB_PASSWORD='<test account password>'  # required, no default
+
+cd Argus-backend
+./mvnw test
+```
+
+Integration tests use a **dedicated test database**, always connecting to `jdbc:postgresql://localhost:5433/argus_rag_test`, and never touch the dev database `argus_rag`. The test account must be created in advance with privileges scoped to `argus_rag_test` only (do not grant any privileges on `argus_rag`).
+
+> ⚠️ **To be verified**: the integration-test steps above have not yet been run-verified; the test database and account must be created by the user beforehand.
 
 <br/>
 

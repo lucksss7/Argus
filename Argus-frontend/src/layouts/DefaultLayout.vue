@@ -48,6 +48,7 @@ const activeMenu = computed(() => {
   if (path.startsWith('/app/documents')) return 'documents'
   if (path.startsWith('/app/qa')) return 'qa'
   if (path.startsWith('/app/assistant')) return 'assistant'
+  if (path.startsWith('/app/tickets')) return 'tickets'
   if (path.startsWith('/app/groups')) return 'groups'
   if (path.startsWith('/app/admin/metrics')) return 'metrics'
   if (path.startsWith('/app/admin')) return 'admin'
@@ -76,7 +77,7 @@ const allMenuItems = [
     label: 'AI 助手',
     icon: `<svg width="20" height="20" viewBox="0 0 24 24" fill="none"><circle cx="12" cy="12" r="9" stroke="currentColor" stroke-width="1.5"/><path d="M8.5 12C8.5 10.067 10.067 8.5 12 8.5C13.933 8.5 15.5 10.067 15.5 12C15.5 13.933 13.933 15.5 12 15.5C10.067 15.5 8.5 13.933 8.5 12Z" stroke="currentColor" stroke-width="1.5"/><path d="M18.5 8.5L20 7M5.5 8.5L4 7M18.5 15.5L20 17M5.5 15.5L4 17" stroke="currentColor" stroke-width="1.5" stroke-linecap="round"/></svg>`,
     path: '/app/assistant',
-    roles: ['USER'] as const,
+    roles: ['ADMIN', 'USER'] as const,
   },
   {
     key: 'groups',
@@ -84,6 +85,13 @@ const allMenuItems = [
     icon: `<svg width="20" height="20" viewBox="0 0 24 24" fill="none"><circle cx="8" cy="7" r="3" stroke="currentColor" stroke-width="1.5"/><circle cx="16" cy="7" r="3" stroke="currentColor" stroke-width="1.5"/><path d="M2 20V19C2 16.7909 3.79086 15 6 15H10C12.2091 15 14 16.7909 14 19V20" stroke="currentColor" stroke-width="1.5" stroke-linecap="round"/><path d="M14 15H16C18.2091 15 20 16.7909 20 19V20" stroke="currentColor" stroke-width="1.5" stroke-linecap="round"/></svg>`,
     path: '/app/groups',
     roles: ['USER'] as const,
+  },
+  {
+    key: 'tickets',
+    label: '工单管理',
+    icon: `<svg width="20" height="20" viewBox="0 0 24 24" fill="none"><rect x="5" y="4" width="14" height="17" rx="2" stroke="currentColor" stroke-width="1.5"/><path d="M9 4.5V3.5C9 2.94772 9.44772 2.5 10 2.5H14C14.5523 2.5 15 2.94772 15 3.5V4.5" stroke="currentColor" stroke-width="1.5"/><path d="M8.5 12L10.5 14L15.5 9" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round"/></svg>`,
+    path: '/app/tickets',
+    roles: ['ADMIN', 'USER'] as const,
   },
 ]
 
